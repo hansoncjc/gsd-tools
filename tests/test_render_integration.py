@@ -73,3 +73,21 @@ def test_actual_gif_frame_count_and_timing(source, tmp_path):
         assert image.info['loop'] == 0
         assert image.n_frames == result.encoded_frames
         assert 1 <= image.n_frames <= count
+
+
+def test_api_default_outputs_are_in_the_input_folder(source, tmp_path, monkeypatch):
+    import shutil
+    source_folder = tmp_path / 'input'
+    source_folder.mkdir()
+    copied_source = source_folder / source.name
+    shutil.copy2(source, copied_source)
+    working_folder = tmp_path / 'working'
+    working_folder.mkdir()
+    monkeypatch.chdir(working_folder)
+    png = render(copied_source, settings=RenderSettings(view='front', size=(320, 280)))
+    animation = gif(copied_source, frames=2, fps=10,
+                    settings=RenderSettings(view='perspective', size=(320, 280)))
+    assert png.parent == source_folder
+    assert animation.path.parent == source_folder
+    assert png.is_file() and animation.path.is_file()
+    assert not list(working_folder.iterdir())

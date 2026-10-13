@@ -8,7 +8,7 @@ from PIL import Image
 
 from .frames import normalize_frame, select_frames, suggest_fps, gif_duration_ms
 from .settings import RenderSettings
-from .rendering import trajectory, validate_input, validate_output, make_viewport, render_frame
+from .rendering import trajectory, validate_input, resolve_output_path, make_viewport, render_frame
 
 
 @dataclass(frozen=True)
@@ -35,10 +35,14 @@ def inspect_gsd(gsd_path: str | Path) -> TrajectoryInfo:
 
 def render(gsd_path: str | Path, output_path: str | Path | None = None, *,
            frame: int = -1, settings: RenderSettings | None = None) -> Path:
-    """Render a PNG; default to the last frame, Front view and radius 0.5."""
+    """Render a PNG; default to the last frame, Front view and radius 0.5.
+
+    Output defaults to the input GSD folder. An explicit output can be a file
+    or directory; relative paths are resolved against the working directory.
+    """
     settings = settings or RenderSettings(view="front")
     source = validate_input(gsd_path)
-    output = validate_output(output_path or Path.cwd() / f"{source.stem}_{settings.view}.png", ".png", source)
+    output = resolve_output_path(source, output_path, settings.view, ".png")
     with trajectory(source, settings) as pipeline:
         frame = normalize_frame(frame, pipeline.source.num_frames)
         viewport = make_viewport(pipeline, settings, frame)
@@ -56,10 +60,12 @@ def gif(gsd_path: str | Path, output_path: str | Path | None = None, *,
 
     Equal frame delays represent equal *frame-index* intervals, not physical
     simulation time. Consecutive identical images may be coalesced by Pillow.
+    Output defaults to the input GSD folder; an explicit output may be a file
+    or directory.
     """
     settings = settings or RenderSettings(view="perspective")
     source = validate_input(gsd_path)
-    output = validate_output(output_path or Path.cwd() / f"{source.stem}_{settings.view}.gif", ".gif", source)
+    output = resolve_output_path(source, output_path, settings.view, ".gif")
     if type(loop) is not int or not 0 <= loop <= 65535:
         raise ValueError("Loop must be an integer between 0 and 65535 (0 = forever).")
     with trajectory(source, settings) as pipeline:

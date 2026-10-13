@@ -42,6 +42,20 @@ def validate_output(path: str | Path, suffix: str, input_path: Path) -> Path:
     return path
 
 
+def resolve_output_path(input_path: Path, output_path: str | Path | None,
+                        view: str, suffix: str) -> Path:
+    """Resolve a file or directory; default to the input trajectory's folder."""
+    filename = f"{input_path.stem}_{view}{suffix}"
+    if output_path is None:
+        path = input_path.parent / filename
+    else:
+        raw = str(output_path)
+        path = Path(output_path).expanduser()
+        if path.is_dir() or not path.suffix or raw.endswith(os.sep):
+            path = path / filename
+    return validate_output(path, suffix, input_path)
+
+
 @contextmanager
 def trajectory(path: str | Path, settings: RenderSettings | None = None):
     """Use an isolated scene and restore existing scene pipelines on exit.

@@ -31,7 +31,7 @@ class RenderSettings:
     view: str = "perspective"
     radius: float = 0.5
     color: str = DEFAULT_BLUE
-    size: tuple[int, int] = (900, 760)
+    size: tuple[int, int] = (1200, 1200)
 
     def __post_init__(self):
         if self.view not in {"perspective", "front"}:
