@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gsd-tools"
+version = "0.1.0"
+description = "Render GSD snapshots and GIFs with shared OVITO camera settings"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["ovito>=3.12,<4", "Pillow>=10", "numpy>=1.23"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+gsd-tools = "gsd_tools.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
