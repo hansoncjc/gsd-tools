@@ -95,7 +95,7 @@ def trajectory(path: str | Path, settings: RenderSettings | None = None):
                 if data.cell is not None:
                     data.cell.vis.enabled = True
                     data.cell.vis.render_cell = True
-                    data.cell.vis.rendering_color = rgb
+                    data.cell.vis.rendering_color = (0.0, 0.0, 0.0)
 
             pipeline.modifiers.append(appearance)
 

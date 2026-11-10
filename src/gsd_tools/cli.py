@@ -3,18 +3,19 @@ import argparse
 import math
 import sys
 
-from .api import gif, inspect_gsd, render
+from .api import gif, mp4, inspect_gsd, render, require_ffmpeg, validate_mp4_fps
 from .frames import normalize_frame, select_frames, suggest_fps, gif_duration_ms
 from .rendering import validate_input, resolve_output_path
 from .settings import DEFAULT_BLUE, RenderSettings, parse_color
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(prog="gsd-tools", description="Render GSD snapshots and GIFs with OVITO.")
+    parser = argparse.ArgumentParser(prog="gsd-tools", description="Render GSD snapshots, GIFs and MP4 videos with OVITO.")
     subcommands = parser.add_subparsers(dest="command", required=True)
     for command, description, default_view in [
         ("render", "Render one GSD frame as a PNG.", "front"),
         ("gif", "Render a GSD trajectory as a GIF.", "perspective"),
+        ("mp4", "Render a GSD trajectory as an MP4 video using FFmpeg.", "perspective"),
     ]:
         sub = subcommands.add_parser(command, help=description, description=description)
         sub.set_defaults(default_view=default_view)
@@ -23,7 +24,7 @@ def build_parser():
         sub.add_argument("--view", choices=["perspective", "front"],
                          help=f"Camera preset (default: {default_view}).")
         sub.add_argument("--radius", type=float, help="Sphere radius in simulation units (default: 0.5).")
-        sub.add_argument("--color", help="Particle and box color: name or '#RRGGBB' (default: #6666FF).")
+        sub.add_argument("--color", help="Particle color: name or '#RRGGBB' (default: #6666FF).")
         sub.add_argument("--size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"),
                          help="Output dimensions (default: 1200 1200).")
         sub.add_argument("--no-prompt", action="store_true",
@@ -35,7 +36,10 @@ def build_parser():
             sub.add_argument("--end", type=int, help="Inclusive ending frame (default: -1 = last).")
             sub.add_argument("--frames", type=int, help="Number of uniformly sampled output frames (default: all).")
             sub.add_argument("--fps", type=float, help="Playback FPS; suggested automatically when omitted.")
-            sub.add_argument("--loop", type=int, help="GIF repeats; 0 = forever (default).")
+            if command == "gif":
+                sub.add_argument("--loop", type=int, help="GIF repeats; 0 = forever (default).")
+            else:
+                sub.add_argument("--crf", type=int, help="H.264 quality: 0–51, lower = higher quality (default: 18).")
     return parser
 
 
@@ -89,6 +93,13 @@ def parse_loop(value):
     return loop
 
 
+def parse_crf(value):
+    crf = int(value)
+    if not 0 <= crf <= 51:
+        raise ValueError("CRF must be between 0 and 51 (lower = higher quality).")
+    return crf
+
+
 def clean_path(value):
     return value.strip().strip("\"'")
 
@@ -103,11 +114,13 @@ def main(argv=None) -> int:
                 parser.error("Please provide the GSD file path.")
             args.gsd_path = clean_path(input("GSD path: "))
         source = validate_input(args.gsd_path)
+        if args.command == "mp4":
+            require_ffmpeg()
         info = inspect_gsd(source)
         print(f"GSD total frames: {info.total_frames}")
         view = prompt_option(args.view, "View (front/perspective)", args.default_view, parse_view, interactive)
         radius = prompt_option(args.radius, "Sphere radius", 0.5, parse_radius, interactive)
-        color = prompt_option(args.color, "Particle and box color", DEFAULT_BLUE, parse_color_option, interactive)
+        color = prompt_option(args.color, "Particle color", DEFAULT_BLUE, parse_color_option, interactive)
         size = prompt_option(args.size, "Image size (width height)", (1200, 1200), parse_size, interactive)
         settings = RenderSettings(view=view, radius=radius, color=color, size=tuple(size))
 
@@ -139,16 +152,24 @@ def main(argv=None) -> int:
 
             def parse_fps(value):
                 fps = float(value)
-                gif_duration_ms(fps)
+                if args.command == "gif":
+                    gif_duration_ms(fps)
+                else:
+                    validate_mp4_fps(fps)
                 return fps
 
             fps = prompt_option(args.fps, "Playback FPS", float(recommended), parse_fps, interactive)
-            duration_ms = gif_duration_ms(fps)
-            print(f"Requested FPS: {fps:g}; actual FPS: {1000 / duration_ms:.4g}; "
-                  f"estimated duration: {len(selected) * duration_ms / 1000:.2f} s")
-            loop = prompt_option(args.loop, "Loop (0 = forever)", 0, parse_loop, interactive)
+            if args.command == "gif":
+                duration_ms = gif_duration_ms(fps)
+                print(f"Requested FPS: {fps:g}; actual FPS: {1000 / duration_ms:.4g}; "
+                      f"estimated duration: {len(selected) * duration_ms / 1000:.2f} s")
+                loop = prompt_option(args.loop, "Loop (0 = forever)", 0, parse_loop, interactive)
+            else:
+                fps = validate_mp4_fps(fps)
+                print(f"Playback FPS: {fps:g}; estimated duration: {len(selected) / fps:.2f} s")
+                crf = prompt_option(args.crf, "Video quality (CRF, lower = higher quality)", 18, parse_crf, interactive)
 
-        suffix = ".png" if args.command == "render" else ".gif"
+        suffix = {"render": ".png", "gif": ".gif", "mp4": ".mp4"}[args.command]
         default_output = resolve_output_path(source, None, view, suffix)
         output = prompt_option(args.output, "Output file or directory", default_output,
                                lambda value: resolve_output_path(source, clean_path(value), view, suffix),
@@ -163,6 +184,13 @@ def main(argv=None) -> int:
             if done == 1 or done == total or done % max(1, total // 20) == 0:
                 print(f"Rendered {done}/{total} frames", flush=True)
 
+        if args.command == "mp4":
+            result = mp4(source, output, start=start, end=end, frames=count, fps=fps,
+                         crf=crf, settings=settings, progress=progress)
+            print(f"Saved MP4: {result.path}")
+            print(f"Encoded frames: {len(result.source_frames)}; playback FPS: {result.fps:g}; "
+                  f"duration: {result.duration_seconds:.2f} s; size: {result.size[0]} x {result.size[1]}")
+            return 0
         result = gif(source, output, start=start, end=end, frames=count, fps=fps,
                      loop=loop, settings=settings, progress=progress)
         print(f"Saved GIF: {result.path}")

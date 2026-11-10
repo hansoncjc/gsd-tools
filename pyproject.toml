@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gsd-tools"
 version = "0.1.0"
-description = "Render GSD snapshots and GIFs with shared OVITO camera settings"
+description = "Render GSD snapshots, GIFs and MP4 videos with shared OVITO camera settings"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["ovito>=3.12,<4", "Pillow>=10", "numpy>=1.23"]
